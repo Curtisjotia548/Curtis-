@@ -1,0 +1,85 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
+
+export default function DerivMarketAnalyzer() {
+  const [token, setToken] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [ticks, setTicks] = useState([]);
+  const [symbol, setSymbol] = useState('R_75'); // Volatility 75 Index
+  const [ws, setWs] = useState(null);
+
+  useEffect(() => {
+    if (connected && token) {
+      const socket = new WebSocket('wss://ws.deriv.com/websockets/v3?app_id=1089');
+      setWs(socket);
+
+      socket.onopen = () => {
+        socket.send(JSON.stringify({ authorize: token }));
+      };
+
+      socket.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+
+        if (data.msg_type === 'authorize') {
+          socket.send(JSON.stringify({ ticks: symbol }));
+        }
+
+        if (data.msg_type === 'tick') {
+          setTicks((prev) => [...prev.slice(-19), {
+            time: new Date(data.tick.epoch * 1000).toLocaleTimeString(),
+            quote: Number(data.tick.quote)
+          }]);
+        }
+      };
+
+      return () => socket.close();
+    }
+  }, [connected, token, symbol]);
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white p-4">
+      <h1 className="text-3xl font-bold mb-6">Deriv Market Analyzer</h1>
+
+      {!connected ? (
+        <Card className="max-w-md mb-6">
+          <CardContent>
+            <p className="mb-2">Paste your Deriv API Token:</p>
+            <Input
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Enter your API token"
+              className="mb-4"
+            />
+            <Button onClick={() => setConnected(true)}>Connect</Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div>
+          <div className="flex gap-4 mb-4">
+            <Input
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              placeholder="Enter symbol (e.g., R_75)"
+            />
+            <Button onClick={() => setConnected(false)} variant="destructive">Disconnect</Button>
+          </div>
+
+          <Card>
+            <CardContent>
+              <h2 className="text-xl font-semibold mb-2">Live Price: {ticks[ticks.length - 1]?.quote ?? '---'}</h2>
+              <LineChart width={600} height={300} data={ticks}>
+                <XAxis dataKey="time" />
+                <YAxis domain={['auto', 'auto']} />
+                <Tooltip />
+                <Line type="monotone" dataKey="quote" stroke="#00FF00" strokeWidth={2} />
+              </LineChart>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
